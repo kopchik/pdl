@@ -2,30 +2,49 @@
 
 from urllib.request import urlopen, Request
 from urllib.parse import urlparse
-from threading import Thread
+from threading import Thread, Lock
 from os.path import basename
+from atexit import register as atexit
+import pickle
 import re
 
-CHUNKSIZE = 500*1024*1024
-queue = []
-class Worker(Thread):
-  def __init__(self, url, fd):
-    super().__init__()
-    self.url = url
-    self.fd  = fd
-  def run(self):
-    while True:
-      try: start, stop = queue.pop(0)
-      except IndexError: break
+CHUNKSIZE = 1*1024*1024
+WORKERS = 5
 
-      req = Request(self.url)
-      req.headers['Range'] = 'bytes=%s-%s' % (start, stop)
-      resp = urlopen(req)
-      print(resp.headers.get('Content-Range')) #TODO: make sanity check
-      data = resp.read()
-      assert len(data) == stop - start
-      self.fd.seek(start)
-      self.fd.write(data)
+def worker(url, queue, completed, fd, lock):
+  while True:
+    try:
+      start, stop = queue.pop(0)
+    except IndexError:
+      break
+    req = Request(url)
+    req.headers['Range'] = 'bytes=%s-%s' % (start, stop)
+    resp = urlopen(req)
+    print("downloading", start, "-", stop)
+    print(resp.headers.get('Content-Range'))
+    data = resp.read()
+    print("got", len(data), "for", start, stop)
+    assert len(data) == stop - start + 1
+    with lock:
+      fd.seek(start)
+      fd.write(data)
+    completed.append((start, stop))
+    print("complete", start, "-", stop)
+
+
+def chunkize(size, completed, chunksize=CHUNKSIZE):
+  chunklist = []
+  start, stop = 0, min(size, chunksize)-1
+  while True:
+    print("appending", start, stop)
+    chunk = (start, stop)
+    if chunk not in completed:
+      chunklist.append(chunk)
+    if stop == size-1:
+      break
+    start = stop+1
+    stop  = min(size-1, stop+chunksize)
+  return chunklist
 
 
 class Downloader(Thread):
@@ -34,39 +53,43 @@ class Downloader(Thread):
     self.url = url
 
   def run(self):
+    lock = Lock()
     url = self.url
-    #host, uri = re.findall("https*://(.+)/.*", self.url)
-    #print(host, uri)
     r = urlparse(url)
     outfile = basename(r.path)
+    statusfile = outfile+".download"
     print("url is", url)
     print("output to", outfile)
     print("getting size... ", end='')
     response = urlopen( Request(url, method='HEAD') )
-    assert 'Content-Length' 
-    rawlen = response.getheader('Content-Length')
-    assert rawlen, "No Content-Length header"
-    assert rawlen.isdigit(), "Content-Length is not a number: %s" % rawlen
-    flen = int(rawlen)
-    print(flen)
-    start, stop = 0, min(flen, CHUNKSIZE)
-    while True:
-      print("appending", start, stop)
-      queue.append((start,stop))
-      if stop == flen: break
-      start += CHUNKSIZE
-      stop  = min(flen, stop+CHUNKSIZE)
-    with open(outfile, "wb") as fd:  #TODO: will overwrite existing file
-      fd.truncate(flen)
+    rawsize = response.getheader('Content-Length')
+    assert rawsize, "No Content-Length header"
+    size = int(rawsize)
+    print(size)
+
+    def save():
+      pickle.dump(completed, open(statusfile, "wb"))
+    atexit(save)
+
+    completed = []
+    try:
+      completed = pickle.load(open(statusfile, "rb"))
+    except Exception as err:
+      print("error unpickling db:", err)
+    queue = chunkize(size, completed)
+
+    with open(outfile, "ab") as fd:
+      fd.truncate(size)
       workers = []
-      for i in range(5):
-        worker = Worker(url, fd)
-        worker.start()
-        workers.append(worker)
+      global worker
+      for i in range(WORKERS):
+        w = Thread(target=worker, args=(url, queue, completed, fd, lock))
+        w.start()
+        workers.append(w)
 
       for worker in workers:
         worker.join()
-      print("downloading finished")
+      print("download finished")
 
 
 if __name__ == '__main__':
