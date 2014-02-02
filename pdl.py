@@ -4,32 +4,14 @@ from urllib.request import urlopen, Request
 from urllib.parse import urlparse
 from threading import Thread, Lock
 from os.path import basename
-from atexit import register as atexit
+from os import unlink
+import atexit
 import pickle
 import re
 
 CHUNKSIZE = 1*1024*1024
+#CHUNKSIZE = 3
 WORKERS = 5
-
-def worker(url, queue, completed, fd, lock):
-  while True:
-    try:
-      start, stop = queue.pop(0)
-    except IndexError:
-      break
-    req = Request(url)
-    req.headers['Range'] = 'bytes=%s-%s' % (start, stop)
-    resp = urlopen(req)
-    print("downloading", start, "-", stop)
-    print(resp.headers.get('Content-Range'))
-    data = resp.read()
-    print("got", len(data), "for", start, stop)
-    assert len(data) == stop - start + 1
-    with lock:
-      fd.seek(start)
-      fd.write(data)
-    completed.append((start, stop))
-    print("complete", start, "-", stop)
 
 
 def chunkize(size, completed, chunksize=CHUNKSIZE):
@@ -45,6 +27,25 @@ def chunkize(size, completed, chunksize=CHUNKSIZE):
     start = stop+1
     stop  = min(size-1, stop+chunksize)
   return chunklist
+
+
+def worker(url, queue, completed, fd, lock):
+  while True:
+    try:
+      start, stop = queue.pop(0)
+    except IndexError:
+      break
+    req = Request(url)
+    req.headers['Range'] = 'bytes=%s-%s' % (start, stop)
+    resp = urlopen(req)
+    print("downloading", start, "-", stop)
+    data = resp.read()
+    assert len(data) == stop - start + 1
+    with lock:
+      fd.seek(start)
+      fd.write(data)
+    completed.append((start, stop))
+    print("complete", start, "-", stop)
 
 
 class Downloader(Thread):
@@ -67,9 +68,9 @@ class Downloader(Thread):
     size = int(rawsize)
     print(size)
 
-    def save():
+    def save_status():
       pickle.dump(completed, open(statusfile, "wb"))
-    atexit(save)
+    atexit.register(save_status)
 
     completed = []
     try:
@@ -83,13 +84,18 @@ class Downloader(Thread):
       workers = []
       global worker
       for i in range(WORKERS):
-        w = Thread(target=worker, args=(url, queue, completed, fd, lock))
+        w = Thread(target=worker, args=(url, queue, completed, fd, lock), daemon=True)
         w.start()
         workers.append(w)
 
       for worker in workers:
         worker.join()
       print("download finished")
+      atexit.unregister(save_status)
+      try:
+        unlink(statusfile)
+      except FileNotFoundError:
+        pass
 
 
 if __name__ == '__main__':
