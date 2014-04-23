@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from threading import Thread, Lock
 from os.path import basename
 from os import unlink
+import argparse
 import atexit
 import pickle
 import re
@@ -49,9 +50,10 @@ def worker(url, queue, completed, fd, lock):
 
 
 class Downloader(Thread):
-  def __init__(self, url):
+  def __init__(self, url, num_workers):
     super().__init__()
     self.url = url
+    self.num_workers = num_workers
 
   def run(self):
     lock = Lock()
@@ -83,7 +85,7 @@ class Downloader(Thread):
       fd.truncate(size)
       workers = []
       global worker
-      for i in range(WORKERS):
+      for i in range(self.num_workers):
         w = Thread(target=worker, args=(url, queue, completed, fd, lock), daemon=True)
         w.start()
         workers.append(w)
@@ -99,6 +101,12 @@ class Downloader(Thread):
 
 
 if __name__ == '__main__':
-  d = Downloader("http://messir.net/static/test")
-  d.start()
-  d.join()
+  parser = argparse.ArgumentParser(description='The best downloader. Ever.')
+  parser.add_argument('-w', '--workers', type=int, default=WORKERS, help="number of workers (default %s)" % WORKERS)
+  parser.add_argument('-d', '--debug', default=False, const=True, action='store_const', help='enable debug mode')
+  parser.add_argument('url', help='URL to download')
+  args = parser.parse_args()
+
+  downloader = Downloader(args.url, args.workers)
+  downloader.start()
+  downloader.join()
