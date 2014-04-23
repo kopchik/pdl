@@ -10,8 +10,8 @@ import atexit
 import pickle
 import re
 
-CHUNKSIZE = 1*1024*1024
-#CHUNKSIZE = 3
+MEG = 1*1024*1024
+CHUNKSIZE = 5   # in megabytes
 WORKERS = 5
 
 
@@ -50,10 +50,12 @@ def worker(url, queue, completed, fd, lock):
 
 
 class Downloader(Thread):
-  def __init__(self, url, num_workers):
+  def __init__(self, url, num_workers, chunksize):
     super().__init__()
     self.url = url
     self.num_workers = num_workers
+    self.chunksize = chunksize
+
 
   def run(self):
     lock = Lock()
@@ -79,7 +81,7 @@ class Downloader(Thread):
       completed = pickle.load(open(statusfile, "rb"))
     except Exception as err:
       print("error unpickling db:", err)
-    queue = chunkize(size, completed)
+    queue = chunkize(size, completed, self.chunksize)
 
     with open(outfile, "w+b") as fd:
       fd.truncate(size)
@@ -102,11 +104,14 @@ class Downloader(Thread):
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='The best downloader. Ever.')
-  parser.add_argument('-w', '--workers', type=int, default=WORKERS, help="number of workers (default %s)" % WORKERS)
+  parser.add_argument('-w', '--workers', type=int, default=WORKERS,
+                      help="number of workers (default %s)" % WORKERS)
+  parser.add_argument('-c', '--chunksize', type=int, default=CHUNKSIZE,
+                      help='chunk size in megs (default %s)' % CHUNKSIZE)
   parser.add_argument('-d', '--debug', default=False, const=True, action='store_const', help='enable debug mode')
   parser.add_argument('url', help='URL to download')
   args = parser.parse_args()
 
-  downloader = Downloader(args.url, args.workers)
+  downloader = Downloader(args.url, args.workers, args.chunksize*MEGS)
   downloader.start()
   downloader.join()
