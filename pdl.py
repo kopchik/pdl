@@ -79,7 +79,7 @@ class Downloader(Thread):
       print("error unpickling db:", err)
     queue = chunkize(size, completed)
 
-    with open(outfile, "ab") as fd:
+    with open(outfile, "w+b") as fd:
       fd.truncate(size)
       workers = []
       global worker
