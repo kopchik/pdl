@@ -30,5 +30,3 @@ TODO:
 
 1. Intercept CTRL+C better
 1. Do not download files twice
-1. Make tunnable verbosity
-1. Add version information
