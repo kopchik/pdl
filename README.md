@@ -30,3 +30,4 @@ TODO
 ----
 
 1. Intercept CTRL+C better
+1. Chunksize cannot be altered after resume of download.

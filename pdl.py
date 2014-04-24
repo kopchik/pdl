@@ -16,8 +16,10 @@ VERSION = 3
 MEG = 1*1024*1024
 CHUNKSIZE = 5   # in megabytes
 WORKERS = 5
+
 class Log:
-  lvlmap = {lvl:i for i,lvl in enumerate("debug info warning error".split())}
+  lvlmap = {lvl:i for i,lvl in \
+    enumerate("debug info warning error".split())}
 
   def __init__(self):
     self._verb = 1
