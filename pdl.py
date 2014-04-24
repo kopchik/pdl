@@ -10,6 +10,7 @@ import atexit
 import pickle
 import re
 
+VERSION = 2
 MEG = 1*1024*1024
 CHUNKSIZE = 5   # in megabytes
 WORKERS = 5
@@ -103,7 +104,7 @@ class Downloader(Thread):
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description='The best downloader. Ever.')
+  parser = argparse.ArgumentParser(description='The best downloader. Ever. Version %s.' % VERSION)
   parser.add_argument('-w', '--workers', type=int, default=WORKERS,
                       help="number of workers (default %s)" % WORKERS)
   parser.add_argument('-c', '--chunksize', type=int, default=CHUNKSIZE,
