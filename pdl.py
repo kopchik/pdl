@@ -12,7 +12,7 @@ import atexit
 import pickle
 import re
 
-VERSION = 2
+VERSION = 3
 MEG = 1*1024*1024
 CHUNKSIZE = 5   # in megabytes
 WORKERS = 5

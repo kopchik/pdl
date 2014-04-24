@@ -26,6 +26,7 @@ optional arguments:
   -d, --debug           enable debug mode
 ~~~
 
-TODO:
+TODO
+----
 
 1. Intercept CTRL+C better
