@@ -29,4 +29,3 @@ optional arguments:
 TODO:
 
 1. Intercept CTRL+C better
-1. Do not download files twice

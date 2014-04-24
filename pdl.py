@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 from urllib.request import urlopen, Request
-from urllib.parse import urlparse
+from os.path import basename, exists
 from threading import Thread, Lock
+from urllib.parse import urlparse
 from functools import partial
-from os.path import basename
-from sys import stderr
+from sys import stderr, exit
 from os import unlink
 import argparse
 import atexit
@@ -79,18 +79,23 @@ class Downloader(Thread):
 
 
   def run(self):
-    lock = Lock()
+    lock = Lock()                     # allow only one writer at most
     url = self.url
-    r = urlparse(url)
-    outfile = basename(r.path)
-    statusfile = outfile+".download"
-    log.info("url: %s" % url)
-    log.info("saving to %s" % outfile)
+    num_workers = self.num_workers
+    r = urlparse(url)                 # request object from urllib
+    outfile = basename(r.path)        # download file name
+    statusfile = outfile+".download"  # keep tracking of what was already downloaded
+    log.info("url: '%s'" % url)
+    if exists(outfile) and not exists(statusfile):
+      log.info("It seems file already downloaded as '%s'" % outfile)
+      return None
+    log.info("saving to '%s'" % outfile)
+
     response = urlopen( Request(url, method='HEAD') )
     rawsize = response.getheader('Content-Length')
     assert rawsize, "No Content-Length header"
     size = int(rawsize)
-    log.info("download size %s" % size)
+    log.info("download size: %s bytes" % size)
 
     def save_status():
       pickle.dump(completed, open(statusfile, "wb"))
@@ -99,15 +104,18 @@ class Downloader(Thread):
     completed = []
     try:
       completed = pickle.load(open(statusfile, "rb"))
+    except FileNotFoundError:
+      pass
     except Exception as err:
       log.error("error unpickling db: %s" % err)
+      return False
     queue = chunkize(size, completed, self.chunksize)
 
     with open(outfile, "w+b") as fd:
       fd.truncate(size)
       workers = []
       global worker
-      for i in range(self.num_workers):
+      for i in range(num_workers):
         w = Thread(target=worker, args=(url, queue, completed, fd, lock), daemon=True)
         w.start()
         workers.append(w)
@@ -120,6 +128,8 @@ class Downloader(Thread):
         unlink(statusfile)
       except FileNotFoundError:
         pass
+
+    return True
 
 
 if __name__ == '__main__':
