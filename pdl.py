@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
+from os.path import basename, exists, isfile
 from urllib.request import urlopen, Request
-from os.path import basename, exists
 from threading import Thread, Lock
 from urllib.parse import urlparse
 from functools import partial
@@ -114,7 +114,9 @@ class Downloader(Thread):
       return False
     queue = chunkize(size, completed, self.chunksize)
 
-    with open(outfile, "w+b") as fd:
+    # open() does not support O_CREAT :(
+    mode = "rb+" if isfile(outfile) else "wb"
+    with open(outfile, mode) as fd:
       fd.truncate(size)
       workers = []
       global worker
