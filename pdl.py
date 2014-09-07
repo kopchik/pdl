@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# TODO: allow for changing chunk size
 
 from os.path import basename, exists, isfile
 from urllib.request import urlopen, Request
@@ -7,9 +8,11 @@ from urllib.parse import urlparse
 from functools import partial
 from sys import stderr, exit
 from os import unlink
+import logging as log
 import argparse
 import atexit
 import pickle
+import time
 import re
 
 VERSION = 4
@@ -17,125 +20,137 @@ MEG = 1*1024*1024
 CHUNKSIZE = 5   # in megabytes
 WORKERS = 5
 
-class Log:
-  lvlmap = {lvl:i for i,lvl in \
-    enumerate("debug info warning error".split())}
+class Status:
+  # __slots__ = ['fd', 'size', 'queue', 'completed', 'lock', 'url']
+  def __init__(self, size):
+    self.fd = None
+    self.size = size
+    self.queue = []
+    self.completed = []
+    self.lock = Lock()
+    self.chunkize()
 
-  def __init__(self):
-    self._verb = 1
+  def __getstate__(self):
+    state = self.__dict__.copy()
+    state['fd'] = None
+    state['queue'] = None
+    state['lock'] = None
+    return state
 
-  def log(self, msg, lvl=1):
-    if self.lvlmap[lvl] < self._verb: return
-    msg = "{lvl}: {msg}".format(lvl=lvl.upper(), msg=msg)
-    print(msg, file=stderr)
+  def __setstate__(self, state):
+    self.__dict__.update(state)
+    self.chunkize()
+    self.lock = Lock()
 
-  def __getattr__(self, lvl):
-    return partial(self.log, lvl=lvl)
+  def chunkize(self, chunksize=CHUNKSIZE*MEG):
+    self.queue = []
+    start, stop = 0, min(self.size, chunksize)-1
+    while True:
+      chunk = (start, stop)
+      if chunk not in self.completed:
+        self.queue.append(chunk)
+      if stop == self.size-1:
+        break
+      start = stop+1
+      stop  = min(self.size-1, stop+chunksize)
+    log.debug("chunks to download: %s" % self.queue)
 
-  def verbosity(self, lvl):
-    assert lvl in self.lvlmap
-    self._verb = self.lvlmap[lvl]
-log = Log()
-
-
-def chunkize(size, completed, chunksize=CHUNKSIZE):
-  chunklist = []
-  start, stop = 0, min(size, chunksize)-1
-  while True:
-    chunk = (start, stop)
-    if chunk not in completed:
-      chunklist.append(chunk)
-    if stop == size-1:
-      break
-    start = stop+1
-    stop  = min(size-1, stop+chunksize)
-  log.debug("chunks to download: %s" % chunklist)
-  return chunklist
+  def status(self):
+    downloaded = sum(stop-start for start, stop in self.completed)
+    total = self.size
+    percent = downloaded / total
+    return "{}/{} ({:.2%})".format(downloaded, total, percent, grouping=True)
 
 
-def worker(url, queue, completed, fd, lock):
+def worker(st):
   while True:
     try:
-      start, stop = queue.pop(0)
+      start, stop = st.queue.pop(0)
     except IndexError:
       break
-    req = Request(url)
-    req.headers['Range'] = 'bytes=%s-%s' % (start, stop)
+    req = Request(st.url)
+    req.headers['Range'] = 'bytes=%s-%s' % (start,stop)
     resp = urlopen(req)
     log.debug("downloading bytes %s - %s" % (start,stop))
     data = resp.read()
     assert len(data) == stop - start + 1
-    with lock:
-      fd.seek(start)
-      fd.write(data)
-    completed.append((start, stop))
+    with st.lock:
+      st.fd.seek(start)
+      st.fd.write(data)
+    st.completed.append((start, stop))
     log.debug("complete %s - %s" % (start,stop))
 
 
-class Downloader(Thread):
-  def __init__(self, url, num_workers, chunksize, out=None):
-    super().__init__()
-    self.url = url
-    self.out = out
-    self.num_workers = num_workers
-    self.chunksize = chunksize
+def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
+  # calculate download filename
+  r = urlparse(url)                       # request object from urllib
+  outfile = out or basename(r.path)       # download file name
+  statusfile = outfile + ".download"      # keep tracking of what was already downloaded
+  log.info("url: '%s'" % url)
+  if exists(outfile) and not exists(statusfile):
+    log.info("It seems file already downloaded as '%s'" % outfile)
+    return None
+  log.info("saving to '%s'" % outfile)
 
+  # get file size
+  response = urlopen( Request(url, method='HEAD') )
+  rawsize = response.getheader('Content-Length')
+  assert rawsize, "No Content-Length header"
+  size = int(rawsize)
+  assert size < 2000*MEG, "very large file, are you sure?"
+  log.info("download size: %s bytes" % size)
 
-  def run(self):
-    lock = Lock()                     # allow only one writer at most
-    url = self.url
-    num_workers = self.num_workers
-    r = urlparse(url)                 # request object from urllib
-    outfile = self.out or basename(r.path)  # download file name
-    statusfile = outfile+".download"  # keep tracking of what was already downloaded
-    log.info("url: '%s'" % url)
-    if exists(outfile) and not exists(statusfile):
-      log.info("It seems file already downloaded as '%s'" % outfile)
-      return None
-    log.info("saving to '%s'" % outfile)
+  # load status from file or create new
+  try:
+    status = pickle.load(open(statusfile, "rb"))
+    log.debug("status restored from %s" % statusfile)
+    assert status.size == size, "cannot resume download: " \
+      "original file had %s size, this one is %s" % (status.size, size)
+  except FileNotFoundError:
+    status = Status(size)
+  except Exception as err:
+    log.error("error unpickling db: %s" % err)
+    return False
 
-    response = urlopen( Request(url, method='HEAD') )
-    rawsize = response.getheader('Content-Length')
-    assert rawsize, "No Content-Length header"
-    size = int(rawsize)
-    log.info("download size: %s bytes" % size)
+  status.url = url
 
-    def save_status():
-      with lock:
-        pickle.dump(completed, open(statusfile, "wb"))
-    atexit.register(save_status)
+  # save status when interrupted
+  def save_status():
+    with status.lock:
+      log.info("saving state to %s" % statusfile)
+      pickle.dump(status, open(statusfile, "wb"))
+  atexit.register(save_status)
 
-    completed = []
+  # open file and launch workers
+  mode = "rb+" if isfile(outfile) else "wb"  # open() does not support O_CREAT :(
+  with open(outfile, mode) as fd:
+    status.fd = fd
+    status.fd.truncate(size)
+    workers = []
+
+    # output status
+    def output_status():
+      while True:
+        time.sleep(5)
+        print(status.status())
+    Thread(target=output_status, daemon=True).start()
+
+    global worker
+    for i in range(num_workers):
+      w = Thread(target=worker, args=(status,), daemon=True)
+      w.start()
+      workers.append(w)
+
+    for worker in workers:
+      worker.join()
+    log.info("download finished")
+    atexit.unregister(save_status)
     try:
-      completed = pickle.load(open(statusfile, "rb"))
+      unlink(statusfile)
     except FileNotFoundError:
       pass
-    except Exception as err:
-      log.error("error unpickling db: %s" % err)
-      return False
-    queue = chunkize(size, completed, self.chunksize)
 
-    # open() does not support O_CREAT :(
-    mode = "rb+" if isfile(outfile) else "wb"
-    with open(outfile, mode) as fd:
-      fd.truncate(size)
-      workers = []
-      global worker
-      for i in range(num_workers):
-        w = Thread(target=worker, args=(url, queue, completed, fd, lock), daemon=True)
-        w.start()
-        workers.append(w)
-
-      for worker in workers:
-        worker.join()
-      log.info("download finished")
-      atexit.unregister(save_status)
-      try:
-        unlink(statusfile)
-      except FileNotFoundError:
-        pass
-
-    return True
+  return True
 
 
 if __name__ == '__main__':
@@ -151,9 +166,15 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
   if args.debug:
-    log.verbosity("debug")
+    log.root.setLevel("DEBUG")
     log.debug("debug output enabled")
-
-  downloader = Downloader(args.url, args.workers, args.chunksize*MEG,out=args.output)
+  else:
+    log.root.setLevel("INFO")
+  kwargs = dict(url=args.url, num_workers=args.workers,
+              chunksize=args.chunksize*MEG, out=args.output)
+  downloader = Thread(target=downloader, kwargs=kwargs, daemon=True)
   downloader.start()
-  downloader.join()
+  try:
+    downloader.join()
+  except KeyboardInterrupt:
+    pass
