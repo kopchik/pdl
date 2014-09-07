@@ -102,7 +102,7 @@ def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
 
   # check for stalled status file
   if not isfile(outfile) and isfile(statusfile):
-    raise Exception("There is a status file (\"%s\"), but no output file (\"%s\")." \
+    raise Exception("There is a status file (\"%s\"), but no output file (\"%s\"). " \
                     "Please stalled status file." % (statusfile, outfile))
 
   # get file size
