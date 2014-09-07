@@ -58,8 +58,7 @@ class Status:
   def status(self):
     downloaded = sum(stop-start for start, stop in self.completed)
     total = self.size
-    percent = downloaded / total
-    return "{}/{} ({:.2%})".format(downloaded, total, percent, grouping=True)
+    return downloaded, total
 
 
 def worker(st):
@@ -79,6 +78,15 @@ def worker(st):
       st.fd.write(data)
     st.completed.append((start, stop))
     log.debug("complete %s - %s" % (start,stop))
+
+
+# output status
+def output_status(status):
+  while True:
+    downloaded, total  = status.status()
+    percentage = downloaded / total
+    print("\rprogress: {:,}/{:,} {:.2%}".format(downloaded, total, percentage), end='')
+    time.sleep(5)
 
 
 def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
@@ -121,20 +129,15 @@ def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
       pickle.dump(status, open(statusfile, "wb"))
   atexit.register(save_status)
 
-  # open file and launch workers
+  # open file for writing and launch workers
   mode = "rb+" if isfile(outfile) else "wb"  # open() does not support O_CREAT :(
   with open(outfile, mode) as fd:
     status.fd = fd
     status.fd.truncate(size)
     workers = []
 
-    # output status
-    def output_status():
-      while True:
-        time.sleep(5)
-        print(status.status())
-    Thread(target=output_status, daemon=True).start()
-
+    # start workers
+    Thread(target=output_status, args=(status,), daemon=True).start()
     global worker
     for i in range(num_workers):
       w = Thread(target=worker, args=(status,), daemon=True)
@@ -143,7 +146,7 @@ def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
 
     for worker in workers:
       worker.join()
-    log.info("download finished")
+    log.info("\ndownload finished")
     atexit.unregister(save_status)
     try:
       unlink(statusfile)
