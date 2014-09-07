@@ -100,7 +100,8 @@ class Downloader(Thread):
     log.info("download size: %s bytes" % size)
 
     def save_status():
-      pickle.dump(completed, open(statusfile, "wb"))
+      with lock:
+        pickle.dump(completed, open(statusfile, "wb"))
     atexit.register(save_status)
 
     completed = []
