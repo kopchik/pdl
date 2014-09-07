@@ -169,7 +169,8 @@ if __name__ == '__main__':
                       help="number of workers (default %s)" % WORKERS)
   parser.add_argument('-c', '--chunksize', type=int, default=CHUNKSIZE,
                       help='chunk size in megs (default %s)' % CHUNKSIZE)
-  parser.add_argument('-d', '--debug', default=False, const=True, action='store_const', help='enable debug mode')
+  parser.add_argument('-d', '--debug', default=False, const=True, action='store_const',
+                      help='enable debug messages')
   parser.add_argument('url', help='URL to download')
   args = parser.parse_args()
 
