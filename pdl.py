@@ -12,7 +12,7 @@ import atexit
 import pickle
 import re
 
-VERSION = 3
+VERSION = 4
 MEG = 1*1024*1024
 CHUNKSIZE = 5   # in megabytes
 WORKERS = 5
@@ -73,9 +73,10 @@ def worker(url, queue, completed, fd, lock):
 
 
 class Downloader(Thread):
-  def __init__(self, url, num_workers, chunksize):
+  def __init__(self, url, num_workers, chunksize, out=None):
     super().__init__()
     self.url = url
+    self.out = out
     self.num_workers = num_workers
     self.chunksize = chunksize
 
@@ -85,7 +86,7 @@ class Downloader(Thread):
     url = self.url
     num_workers = self.num_workers
     r = urlparse(url)                 # request object from urllib
-    outfile = basename(r.path)        # download file name
+    outfile = self.out or basename(r.path)  # download file name
     statusfile = outfile+".download"  # keep tracking of what was already downloaded
     log.info("url: '%s'" % url)
     if exists(outfile) and not exists(statusfile):
@@ -139,6 +140,8 @@ class Downloader(Thread):
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='The best downloader. Ever. Version %s.' % VERSION)
+  parser.add_argument('-o', '--output', type=str, default=None,
+                      help="where to store the downloaded content")
   parser.add_argument('-w', '--workers', type=int, default=WORKERS,
                       help="number of workers (default %s)" % WORKERS)
   parser.add_argument('-c', '--chunksize', type=int, default=CHUNKSIZE,
@@ -151,6 +154,6 @@ if __name__ == '__main__':
     log.verbosity("debug")
     log.debug("debug output enabled")
 
-  downloader = Downloader(args.url, args.workers, args.chunksize*MEG)
+  downloader = Downloader(args.url, args.workers, args.chunksize*MEG,out=args.output)
   downloader.start()
   downloader.join()
