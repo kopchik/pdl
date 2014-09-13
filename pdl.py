@@ -110,7 +110,7 @@ def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
   rawsize = response.getheader('Content-Length')
   assert rawsize, "No Content-Length header"
   size = int(rawsize)
-  assert size < 2000*MEG, "very large file, are you sure?"
+  assert size < 20000*MEG, "very large file, are you sure?"
   log.info("download size: %s bytes" % size)
 
   # load status from file or create new
