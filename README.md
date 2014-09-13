@@ -5,8 +5,8 @@ This tool is for downloading video files. It brakes the job
 into chunks and downloads the in parallel, but first chunks
 are downloaded first. This allows for watching videos while downloading.
 
-It is intented to be dead-simple; in case of an error it will
-fail loudly (I hope).
+It is intented to be dead-simple; in case of an error it
+will fail loudly (I hope).
 
 ~~~
 usage: pdl.py [-h] [-o OUTPUT] [-w WORKERS] [-c CHUNKSIZE] [-d] url
