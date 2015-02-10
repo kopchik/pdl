@@ -84,6 +84,8 @@ def worker(st):
       assert len(data) == stop - start + 1
       backoff = MINBACKOFF
     except Exception as err:
+      log.error("error fetchinf chunk {chunk}: {err}, sleeping {sleep}"
+                .format(chunk=(start, stop), err=err, sleep=backoff))
       time.sleep(backoff)
       backoff = min(backoff * BFACTOR, MAXBACKOFF)
 
