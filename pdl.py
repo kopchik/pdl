@@ -5,15 +5,12 @@ from os.path import basename, exists, isfile
 from urllib.request import urlopen, Request
 from threading import Thread, Lock
 from urllib.parse import urlparse
-from functools import partial
-from sys import stderr, exit
 from os import unlink
 import logging as log
 import argparse
 import atexit
 import pickle
 import time
-import re
 
 VERSION = 4
 MEG = 1*1024*1024
