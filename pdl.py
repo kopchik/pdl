@@ -20,6 +20,7 @@ MEG = 1*1024*1024
 CHUNKSIZE = 5   # in megabytes
 WORKERS = 5
 
+
 class Status:
   # __slots__ = ['fd', 'size', 'queue', 'completed', 'lock', 'url']
   def __init__(self, size):
@@ -51,7 +52,7 @@ class Status:
         self.queue.append(chunk)
       if stop == self.size-1:
         break
-      start = stop+1
+      start = stop + 1
       stop  = min(self.size-1, stop+chunksize)
     log.debug("chunks to download: %s" % self.queue)
 
@@ -68,24 +69,25 @@ def worker(st):
     except IndexError:
       break
     req = Request(st.url)
-    req.headers['Range'] = 'bytes=%s-%s' % (start,stop)
+    req.headers['Range'] = 'bytes=%s-%s' % (start, stop)
     resp = urlopen(req)
-    log.debug("downloading bytes %s - %s" % (start,stop))
+    log.debug("downloading bytes %s - %s" % (start, stop))
     data = resp.read()
     assert len(data) == stop - start + 1
     with st.lock:
       st.fd.seek(start)
       st.fd.write(data)
     st.completed.append((start, stop))
-    log.debug("complete %s - %s" % (start,stop))
+    log.debug("complete %s - %s" % (start, stop))
 
 
 # output status
 def output_status(status):
   while True:
-    downloaded, total  = status.status()
+    downloaded, total = status.status()
     percentage = downloaded / total
-    print("\rprogress: {:,}/{:,} {:.2%}".format(downloaded, total, percentage), end='')
+    print("\rprogress: {:,}/{:,} {:.2%}"
+          .format(downloaded, total, percentage), end='')
     time.sleep(5)
 
 
@@ -93,7 +95,7 @@ def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
   # calculate download filename
   r = urlparse(url)                       # request object from urllib
   outfile = out or basename(r.path)       # download file name
-  statusfile = outfile + ".download"      # keep tracking of what was already downloaded
+  statusfile = outfile + ".download"      # track downloaded chunks
   log.info("url: '%s'" % url)
   if exists(outfile) and not exists(statusfile):
     log.info("It seems file already downloaded as '%s'" % outfile)
@@ -102,11 +104,12 @@ def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
 
   # check for stalled status file
   if not isfile(outfile) and isfile(statusfile):
-    raise Exception("There is a status file (\"%s\"), but no output file (\"%s\"). " \
+    raise Exception("There is a status file (\"%s\"),"
+                    "but no output file (\"%s\"). "
                     "Please stalled status file." % (statusfile, outfile))
 
   # get file size
-  response = urlopen( Request(url, method='HEAD') )
+  response = urlopen(Request(url, method='HEAD'))
   rawsize = response.getheader('Content-Length')
   assert rawsize, "No Content-Length header"
   size = int(rawsize)
@@ -117,8 +120,10 @@ def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
   try:
     status = pickle.load(open(statusfile, "rb"))
     log.debug("status restored from %s" % statusfile)
-    assert status.size == size, "cannot resume download: " \
-      "original file had %s size, this one is %s" % (status.size, size)
+    assert status.size == size,  \
+        "cannot resume download:"  \
+        "original file had %s size, this one is %s" \
+        % (status.size, size)
   except FileNotFoundError:
     status = Status(size)
   except Exception as err:
@@ -135,7 +140,7 @@ def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
   atexit.register(save_status)
 
   # open file for writing and launch workers
-  mode = "rb+" if isfile(outfile) else "wb"  # open() does not support O_CREAT :(
+  mode = "rb+" if isfile(outfile) else "wb"  # open() does not support O_CREAT
   with open(outfile, mode) as fd:
     status.fd = fd
     status.fd.truncate(size)
@@ -162,14 +167,16 @@ def downloader(num_workers=3, chunksize=5*MEG, url=None, out=None):
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description='The best downloader. Ever. Version %s.' % VERSION)
+  parser = argparse.ArgumentParser(
+      description='The best downloader. Ever. Version %s.' % VERSION)
   parser.add_argument('-o', '--output', type=str, default=None,
                       help="where to store the downloaded content")
   parser.add_argument('-w', '--workers', type=int, default=WORKERS,
                       help="number of workers (default %s)" % WORKERS)
   parser.add_argument('-c', '--chunksize', type=int, default=CHUNKSIZE,
                       help='chunk size in megs (default %s)' % CHUNKSIZE)
-  parser.add_argument('-d', '--debug', default=False, const=True, action='store_const',
+  parser.add_argument('-d', '--debug', default=False, const=True,
+                      action='store_const',
                       help='enable debug messages')
   parser.add_argument('url', help='URL to download')
   args = parser.parse_args()
@@ -180,7 +187,7 @@ if __name__ == '__main__':
   else:
     log.root.setLevel("INFO")
   kwargs = dict(url=args.url, num_workers=args.workers,
-              chunksize=args.chunksize*MEG, out=args.output)
+                chunksize=args.chunksize*MEG, out=args.output)
   downloader = Thread(target=downloader, kwargs=kwargs, daemon=True)
   downloader.start()
   try:
