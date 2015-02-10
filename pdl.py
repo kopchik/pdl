@@ -20,6 +20,10 @@ MEG = 1*1024*1024
 CHUNKSIZE = 5   # in megabytes
 WORKERS = 5
 
+MINBACKOFF = 1
+MAXBACKOFF = 30
+BFACTOR = 1.5
+
 
 class Status:
   # __slots__ = ['fd', 'size', 'queue', 'completed', 'lock', 'url']
@@ -63,17 +67,26 @@ class Status:
 
 
 def worker(st):
+  backoff = MINBACKOFF
   while True:
+    # thread-safe way to pop element from the queue
     try:
       start, stop = st.queue.pop(0)
     except IndexError:
       break
-    req = Request(st.url)
-    req.headers['Range'] = 'bytes=%s-%s' % (start, stop)
-    resp = urlopen(req)
-    log.debug("downloading bytes %s - %s" % (start, stop))
-    data = resp.read()
-    assert len(data) == stop - start + 1
+
+    try:
+      req = Request(st.url)
+      req.headers['Range'] = 'bytes=%s-%s' % (start, stop)
+      resp = urlopen(req)
+      log.debug("downloading bytes %s - %s" % (start, stop))
+      data = resp.read()
+      assert len(data) == stop - start + 1
+      backoff = MINBACKOFF
+    except Exception as err:
+      time.sleep(backoff)
+      backoff = min(backoff * BFACTOR, MAXBACKOFF)
+
     with st.lock:
       st.fd.seek(start)
       st.fd.write(data)
