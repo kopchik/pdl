@@ -12,7 +12,7 @@ import atexit
 import pickle
 import time
 
-VERSION = 4
+VERSION = 5
 MEG = 1*1024*1024
 CHUNKSIZE = 5   # in megabytes
 WORKERS = 5
@@ -81,7 +81,7 @@ def worker(st):
       assert len(data) == stop - start + 1
       backoff = MINBACKOFF
     except Exception as err:
-      log.error("error fetchinf chunk {chunk}: {err}, sleeping {sleep}"
+      log.error("error fetching chunk {chunk}: {err}, sleeping {sleep}"
                 .format(chunk=(start, stop), err=err, sleep=backoff))
       time.sleep(backoff)
       backoff = min(backoff * BFACTOR, MAXBACKOFF)
