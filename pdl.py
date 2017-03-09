@@ -31,8 +31,6 @@ BFACTOR = 1.5
 
 
 class Status:
-    # __slots__ = ['fd', 'size', 'queue', 'completed', 'lock', 'url']
-
     def __init__(self, size, chunksize):
         self.fd = None
         self.size = size
@@ -51,18 +49,18 @@ class Status:
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.rechunkize()
+        self.rechunkize(self.chunksize)
         self.lock = Lock()
 
-    def status(self):
+    def progress(self):
         # TODO: potentially long computation
         downloaded = sum(stop - start for start, stop in self.completed)
         total = self.size
         return downloaded, total
 
     def rechunkize(self, chunksize):
+        # TODO
         self.completed = merge(self.completed)
-
         self.chunksize = chunksize
 
 
@@ -114,7 +112,7 @@ def output_status(status):
     old_ts = time.time()
     speed = 0
     while True:
-        downloaded, total = status.status()
+        downloaded, total = status.progress()
         percentage = downloaded / total
         if downloaded != old_downloaded:
             now = time.time()
@@ -140,9 +138,9 @@ def downloader(loop=None, num_workers=3, chunksize=5 * MEG, url=None, out=None):
 
     # check for stalled status file
     if not isfile(outfile) and isfile(statusfile):
-        raise Exception("There is a status file (\"%s\"),"
+        raise Exception("There is a progress file (\"%s\"),"
                         "but no output file (\"%s\"). "
-                        "Please stalled status file." % (statusfile, outfile))
+                        "Please remove stalled status file." % (statusfile, outfile))
 
     # get file size
     r = yield from aiohttp.head(url)
@@ -153,10 +151,10 @@ def downloader(loop=None, num_workers=3, chunksize=5 * MEG, url=None, out=None):
     assert size < 20000 * MEG, "very large file, are you sure?"
     log.info("download size: %s bytes" % size)
 
-    # load status from file or create new
+    # load progress from file or create a new one
     try:
         status = pickle.load(open(statusfile, "rb"))
-        log.debug("status restored from %s" % statusfile)
+        log.debug("progress restored from %s" % statusfile)
         assert status.size == size,  \
             "cannot resume download:"  \
             "original file had %s size, this one is %s" \
@@ -171,19 +169,17 @@ def downloader(loop=None, num_workers=3, chunksize=5 * MEG, url=None, out=None):
         return False
     status.url = url
 
-    # save status when interrupted
-    #@asyncio.coroutine
+    # save download progress when interrupted
     def save_status():
         with status.lock:
             log.info("\n\nsaving state to %s\n" % statusfile)
-            pickle.dump(status, open(statusfile, "wb"))
+            with open(statusfile, "wb") as fd:
+                pickle.dump(status, fd)
     atexit.register(save_status)
 
     # open file for writing and launch workers
     # open() does not support O_CREAT
     mode = "rb+" if isfile(outfile) else "wb"
-    # with open(outfile, mode) as fd:
-    #status.fd = fd
     status.fd = open(outfile, mode)
     status.fd.truncate(size)
 
@@ -197,11 +193,10 @@ def downloader(loop=None, num_workers=3, chunksize=5 * MEG, url=None, out=None):
     while True:
         done, pending = yield from asyncio.wait(tasks)
         print(done, pending)
-        #TODO("check download complete")
+        # TODO("check download complete")
         break
 
     status_worker.cancel()
-    # yield from asyncio.sleep(1)
     log.info("\ndownload finished")
     atexit.unregister(save_status)
     try:
@@ -232,6 +227,7 @@ if __name__ == '__main__':
         log.debug("debug output enabled")
     else:
         log.root.setLevel("INFO")
+
     loop = asyncio.get_event_loop()
     d = downloader(loop=loop, url=args.url, num_workers=args.workers,
                    chunksize=args.chunksize * MEG, out=args.output)
