@@ -102,7 +102,7 @@ async def worker(st):
             st.fd.seek(start)
             for chunk in chunks:
                 st.fd.write(chunk)
-        st.completed.append((start, stop))
+            st.completed.append((start, stop))
         log.debug("complete %s - %s" % (start, stop))
 
 
