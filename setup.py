@@ -7,8 +7,8 @@ setup(name='pdl',
       author="Kandalintsev Alexandre",
       author_email='spam@messir.net',
       license="Beerware",
-      description="Watch you video while it downloads in multiple streams."
-                  "Chunks of the file are downloaded in order required to play.",
+      description="Watch your videos while downloading them in multiple streams."
+                  "Chunks are downloaded in the order required to play.",
       scripts=['pdl.py']
 
 )
